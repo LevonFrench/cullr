@@ -13,6 +13,13 @@ python -m cullr --open
 
 No build step, no dependencies — standard library only, Python 3.9+.
 
+![The library on one poster wall, largest file first](docs/screenshot-wall.png)
+
+Mark what you want gone and every drive chip updates with what you would get
+back, so you can see which disk the sweep actually frees before you commit to it.
+
+![Seven titles marked, showing the reclaim per drive](docs/screenshot-marked.png)
+
 ---
 
 ## What it does
@@ -43,11 +50,11 @@ The panel shows every candidate release smallest-first, with its quality, size,
 age, indexer, and — importantly — **how much you would save**. Set a size cap and
 pick one; cullr hands it to Radarr and the big file gets replaced on import.
 
-There is one wrinkle it handles for you. Radarr will not import a downgrade while
-the movie's current quality profile says the existing file already meets cutoff —
-every smaller release comes back rejected with *"Existing file meets cutoff"*. So
-the panel asks for a **target profile** and switches the movie onto it before
-grabbing. That single step is what makes the whole thing work.
+Radarr will not import a downgrade while the movie's current quality profile says
+the existing file already meets cutoff — every smaller release comes back
+rejected with *"Existing file meets cutoff"*. So the panel asks for a **target
+profile** and switches the movie onto it before grabbing. Skip that switch and
+every grab is refused.
 
 Options in the panel:
 

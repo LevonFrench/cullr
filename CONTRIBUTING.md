@@ -44,9 +44,9 @@ feature you changed.
 
 ## Style
 
-Match the file you are editing. Do not reformat, do not reorder imports, do not
-refactor code unrelated to your change. Small, surgical diffs get merged; large
-sweeping ones do not.
+Match the file you are editing. Do not reformat, do not reorder imports, and do
+not refactor code unrelated to your change. A diff that touches only what it
+needs to is much easier to review, and much more likely to get merged.
 
 ## Reporting a bug
 
