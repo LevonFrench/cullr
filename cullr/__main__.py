@@ -7,6 +7,7 @@ import sys
 
 from . import config as conf
 from .client import Arr, ArrError, Library
+from .mediahoarder import MHError, MediaHoarder
 from .config import VERSION
 from .server import serve
 
@@ -32,6 +33,10 @@ def parse_args(argv=None):
     src.add_argument("--sonarr-key", help="Sonarr API key")
     src.add_argument("--no-radarr", action="store_true", help="ignore Radarr")
     src.add_argument("--no-sonarr", action="store_true", help="ignore Sonarr")
+    src.add_argument("--mh-db", dest="mh_db", metavar="PATH",
+                     help="path to a Media-Hoarder media-hoarder.db")
+    src.add_argument("--no-mediahoarder", action="store_true",
+                     help="ignore Media-Hoarder")
     src.add_argument("-c", "--config", help="path to a cullr.json config file")
 
     safe = p.add_argument_group("safety")
@@ -41,6 +46,9 @@ def parse_args(argv=None):
                       help="accept deletes and log them, but never call the *arr API")
     safe.add_argument("--no-audit", action="store_true",
                       help="do not append deletions to cullr-deletions.jsonl")
+    safe.add_argument("--mh-allow-delete", dest="mh_allow_delete", action="store_true",
+                      help="permit cullr to delete Media-Hoarder files straight off "
+                           "disk (off by default; there is no *arr behind them)")
 
     p.add_argument("--check", action="store_true",
                    help="verify connectivity and print a library summary, then exit")
@@ -69,6 +77,19 @@ def check(cfg) -> int:
             print(f"  {name:<7} FAIL {e}")
             rc = 1
 
+    mh = cfg.mediahoarder
+    if not mh.ready:
+        print(f"  {'mh':<7} not configured")
+    else:
+        try:
+            info = MediaHoarder(mh.db, mh.allow_delete).ping()
+            mode = "delete ENABLED" if mh.allow_delete else "read-only"
+            print(f"  {'mh':<7} OK   {info['rows']} rows, "
+                  f"{info['sourcePaths']} source paths  ({mode})")
+        except MHError as e:
+            print(f"  {'mh':<7} FAIL {e}")
+            rc = 1
+
     lib = Library(cfg)
     try:
         data = lib.data(force=True)
@@ -79,6 +100,10 @@ def check(cfg) -> int:
     mv, sr = data["movies"], data["series"]
     print(f"\n  {len(mv)} movies  {human(sum(x['size'] for x in mv))}")
     print(f"  {len(sr)} series  {human(sum(x['size'] for x in sr))}")
+    for key, label in (("mh", "mh movies"), ("mhseries", "mh series")):
+        rows = data.get(key) or []
+        if rows:
+            print(f"  {len(rows)} {label}  {human(sum(x['size'] for x in rows))}")
     for err in data.get("errors", {}).values():
         print(f"  warning: {err}")
 
@@ -101,9 +126,10 @@ def main(argv=None) -> int:
     for n in notes:
         print(f"  {n}")
 
-    if not any(cfg.get(n) for n in ("radarr", "sonarr")):
-        print("\n  No Radarr or Sonarr instance could be reached.\n"
-              "  Pass --radarr-url/--radarr-key, set RADARR_API_KEY, or write a cullr.json.\n"
+    if not any(cfg.get(n) for n in ("radarr", "sonarr")) and not cfg.mediahoarder.ready:
+        print("\n  No library source could be reached.\n"
+              "  Pass --radarr-url/--radarr-key, set RADARR_API_KEY, point --mh-db at a\n"
+              "  Media-Hoarder database, or write a cullr.json.\n"
               "  See README.md for the config format.", file=sys.stderr)
         return 2
 

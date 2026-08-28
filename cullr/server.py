@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .client import ArrError, Library
 from .config import VERSION, Config
+from .mediahoarder import MHError
 
 STATIC = Path(__file__).parent / "static"
 
@@ -92,7 +93,11 @@ class Handler(BaseHTTPRequestHandler):
                 "version": VERSION,
                 "read_only": s["read_only"], "dry_run": s["dry_run"],
                 "audit": bool(s["audit"]),
-                "sources": {k: s[k]["ready"] for k in ("radarr", "sonarr")},
+                "sources": {k: s[k]["ready"]
+                            for k in ("radarr", "sonarr", "mediahoarder")},
+                # The UI warns before a Media-Hoarder delete, because that one
+                # removes files from disk with no *arr behind it.
+                "mh_allow_delete": s["mediahoarder"]["allow_delete"],
             })
 
         if path == "/api/data":
@@ -106,14 +111,24 @@ class Handler(BaseHTTPRequestHandler):
             if len(bits) < 4:
                 return self._send(404, {"error": "bad poster path"})
             kind, ident = bits[2], bits[3]
-            name = "radarr" if kind == "movie" else "sonarr"
-            client = self.lib.client(name)
-            if not client:
-                return self._send(404, {"error": "source unavailable"})
-            try:
-                got = client.cover(int(ident), q.get("size", ["poster-500.jpg"])[0])
-            except (ValueError, ArrError):
-                got = None
+            if kind in ("mh", "mhseries"):
+                # Media-Hoarder caches its posters on disk next to the database.
+                source = self.lib.mh()
+                if not source:
+                    return self._send(404, {"error": "source unavailable"})
+                try:
+                    got = source.poster(int(ident))
+                except (ValueError, MHError):
+                    got = None
+            else:
+                name = "radarr" if kind == "movie" else "sonarr"
+                client = self.lib.client(name)
+                if not client:
+                    return self._send(404, {"error": "source unavailable"})
+                try:
+                    got = client.cover(int(ident), q.get("size", ["poster-500.jpg"])[0])
+                except (ValueError, ArrError):
+                    got = None
             if not got:
                 return self._send(404, {"error": "no poster"})
             data, ctype = got
@@ -144,8 +159,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/export":
             fmt = q.get("format", ["csv"])[0]
             kind = q.get("kind", ["movie"])[0]
+            bucket = {"movie": "movies", "series": "series",
+                      "mh": "mh", "mhseries": "mhseries"}.get(kind, "movies")
             try:
-                rows = self.lib.data()["movies" if kind == "movie" else "series"]
+                rows = self.lib.data()[bucket]
             except Exception as e:
                 return self._send(500, {"error": str(e)})
             ids = {x for x in q.get("ids", [""])[0].split(",") if x}
@@ -259,14 +276,18 @@ class Handler(BaseHTTPRequestHandler):
             # them, so the audit trail is complete no matter what called us.
             snapshot = self.lib.data()
             known = {}
-            for key in ("movies", "series"):
-                for row in snapshot[key]:
+            for key in ("movies", "series", "mh", "mhseries"):
+                for row in snapshot.get(key) or []:
                     known[(row["kind"], str(row["id"]))] = row
 
             results = []
             for it in items:
-                kind = "movie" if it.get("kind") == "movie" else "series"
-                name = "radarr" if kind == "movie" else "sonarr"
+                raw_kind = it.get("kind")
+                if raw_kind in ("mh", "mhseries"):
+                    kind, name = raw_kind, "mediahoarder"
+                else:
+                    kind = "movie" if raw_kind == "movie" else "series"
+                    name = "radarr" if kind == "movie" else "sonarr"
                 ref = known.get((kind, str(it.get("id")))) or {}
                 rec = {
                     "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -286,6 +307,33 @@ class Handler(BaseHTTPRequestHandler):
                 if self.cfg.dry_run:
                     rec["ok"] = True
                     results.append({**base, "ok": True, "dryRun": True})
+                    _audit(self.cfg, rec)
+                    continue
+
+                if name == "mediahoarder":
+                    # No API to call: these files are removed from disk directly,
+                    # which is why it stays behind --mh-allow-delete. Paths come
+                    # from the server-side snapshot, never from the request body.
+                    source = self.lib.mh()
+                    if not source:
+                        rec["ok"] = False
+                        rec["error"] = "mediahoarder not configured"
+                        results.append({**base, "ok": False, "error": rec["error"]})
+                        _audit(self.cfg, rec)
+                        continue
+                    targets = ref.get("files") or ([ref.get("path")] if ref.get("path") else [])
+                    try:
+                        freed, errors = source.delete_files(targets)
+                    except MHError as e:
+                        freed, errors = 0, [str(e)]
+                    rec["files"] = len(targets)
+                    rec["freed"] = freed
+                    rec["ok"] = bool(targets) and not errors
+                    if errors:
+                        rec["error"] = "; ".join(errors[:3])
+                        results.append({**base, "ok": False, "error": rec["error"]})
+                    else:
+                        results.append({**base, "ok": True, "size": freed})
                     _audit(self.cfg, rec)
                     continue
 

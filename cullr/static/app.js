@@ -14,8 +14,8 @@ const LS = {
   set(k, v) { try { localStorage.setItem("cullr:" + k, JSON.stringify(v)); } catch {} },
 };
 
-let DATA  = { movie: [], series: [], disks: {} };
-let CONF  = { read_only: false, dry_run: false, version: "" };
+let DATA  = { movie: [], series: [], mh: [], mhseries: [], disks: {} };
+let CONF  = { read_only: false, dry_run: false, mh_allow_delete: false, version: "" };
 let marks = new Map();
 let view  = [];
 let drives = new Set();
@@ -25,6 +25,7 @@ const PAGE = 300;
 
 const keyOf = it => it.kind + ":" + it.id;
 const pool  = () => DATA[$("#kind").value] || [];
+const everything = () => [...DATA.movie, ...DATA.series, ...DATA.mh, ...DATA.mhseries];
 
 /* ------------------------------------------------------------ load */
 
@@ -54,10 +55,12 @@ async function boot() {
 async function load(force) {
   try {
     const d = await (await fetch("/api/data" + (force ? "?force=1" : ""))).json();
-    DATA.movie = d.movies || []; DATA.series = d.series || []; DATA.disks = d.disks || {};
+    DATA.movie = d.movies || []; DATA.series = d.series || [];
+    DATA.mh = d.mh || []; DATA.mhseries = d.mhseries || [];
+    DATA.disks = d.disks || {};
     if (d.errors && Object.keys(d.errors).length)
       console.warn("cullr source errors", d.errors);
-    const live = new Set([...DATA.movie, ...DATA.series].map(keyOf));
+    const live = new Set(everything().map(keyOf));
     for (const k of [...marks.keys()]) if (!live.has(k)) marks.delete(k);
     saveMarks();
   } catch (e) {
@@ -96,7 +99,7 @@ function fillFacets() {
 
   // resolve marks restored from localStorage now that data exists
   if (pendingMarks.size) {
-    for (const it of [...DATA.movie, ...DATA.series])
+    for (const it of everything())
       if (pendingMarks.has(keyOf(it))) marks.set(keyOf(it), it);
     pendingMarks = new Set();
   }
@@ -152,10 +155,12 @@ const groupKey = it => ({
 function cardHTML(it, idx) {
   const k = keyOf(it);
   return `<div class="card${marks.has(k) ? " marked" : ""}" data-k="${k}" data-i="${idx}">
-    <img loading="lazy" src="/poster/${it.kind}/${it.id}" alt=""
+    ${it.poster === false
+      ? `<div class="noimg">${esc(it.title)}</div>`
+      : `<img loading="lazy" src="/poster/${it.kind}/${it.id}" alt=""
          onerror="this.replaceWith(Object.assign(document.createElement('div'),
                   {className:'noimg',textContent:this.getAttribute('data-t')}))"
-         data-t="${esc(it.title)}">
+         data-t="${esc(it.title)}">`}
     <div class="dv">${esc(it.drive)}</div><div class="q">${esc(it.quality)}</div>
     <div class="meta">
       <div class="ttl">${esc(it.title)}</div>
@@ -500,7 +505,7 @@ async function profiles() {
 }
 
 async function downsize(it) {
-  if (it.kind !== "movie") return alert("Downsizing is movies-only for now.");
+  if (it.kind !== "movie") return alert("Downsizing needs Radarr, so it is Radarr movies only.");
   const profs = await profiles();
 
   $("#mtitle").textContent = `Find a smaller ${it.title}`;
@@ -621,10 +626,22 @@ $("#commit").addEventListener("click", () => {
   for (const it of items) per[it.drive] = (per[it.drive] || 0) + it.size;
   const excl = $("#exclude").checked;
 
+  // Media-Hoarder items have no *arr behind them: cullr removes those files
+  // from disk itself, so they are called out separately here.
+  const mh = items.filter(x => x.kind === "mh" || x.kind === "mhseries");
+  const mhFiles = mh.reduce((s, x) => s + (x.episodes || 1), 0);
+
   $("#mtitle").textContent = "Confirm deletion";
   $("#mbody").innerHTML = `
     ${CONF.dry_run ? `<div class="note"><b>Dry-run mode.</b> Nothing will actually be deleted —
       the server logs the request and returns success so you can rehearse a sweep.</div>` : ""}
+    ${mh.length ? `<div class="warn"><b>${mh.length} of these are Media-Hoarder items
+      (${mhFiles} file${mhFiles > 1 ? "s" : ""}).</b><br>
+      Media-Hoarder has no API, so cullr deletes those files off disk directly. There is no
+      *arr bookkeeping behind them and no recycle bin on a network share. Media-Hoarder will
+      keep listing them until you rescan.
+      ${CONF.mh_allow_delete ? "" : "<br><b>The server was started without --mh-allow-delete, "
+        + "so it will refuse them.</b>"}</div>` : ""}
     <div class="warn"><b>This permanently deletes ${items.length} item${items.length > 1 ? "s" : ""}
       and their files from disk.</b><br>
       Reclaims <b>${fmt(tot)}</b> — ${Object.entries(per).sort().map(([d, v]) => `${d}: ${fmt(v)}`).join(", ")}.<br>

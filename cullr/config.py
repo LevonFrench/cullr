@@ -21,8 +21,10 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
+from . import mediahoarder
+
 APP = "cullr"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # ---------------------------------------------------------------- discovery
 
@@ -117,11 +119,34 @@ class Instance:
 
 
 @dataclass
+class MHConfig:
+    """Media-Hoarder source. It has no API, so this is a path, not a URL."""
+    db: Optional[str] = None
+    enabled: bool = True
+    #: allow cullr to delete Media-Hoarder files straight off disk
+    allow_delete: bool = False
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.enabled and self.db)
+
+    def redacted(self) -> dict:
+        return {
+            "name": "mediahoarder",
+            "db": self.db,
+            "enabled": self.enabled,
+            "ready": self.ready,
+            "allow_delete": self.allow_delete,
+        }
+
+
+@dataclass
 class Config:
     host: str = "127.0.0.1"
     port: int = 8420
     radarr: Instance = field(default_factory=lambda: Instance("radarr"))
     sonarr: Instance = field(default_factory=lambda: Instance("sonarr"))
+    mediahoarder: MHConfig = field(default_factory=MHConfig)
 
     #: refuse every mutating request; the UI hides its delete controls
     read_only: bool = False
@@ -149,6 +174,7 @@ class Config:
         d = asdict(self)
         d["radarr"] = self.radarr.redacted()
         d["sonarr"] = self.sonarr.redacted()
+        d["mediahoarder"] = self.mediahoarder.redacted()
         d["version"] = VERSION
         return d
 
@@ -241,6 +267,30 @@ def build(args) -> tuple[Config, list[str]]:
         if not inst.ready and inst.enabled:
             notes.append(f"{name}: not configured (no url/key found) — skipping")
             inst.enabled = False
+
+    mh = cfg.mediahoarder
+    mhblock = raw.get("mediahoarder") or {}
+    mh.db = (getattr(args, "mh_db", None)
+             or _env("CULLR_MH_DB")
+             or mhblock.get("db"))
+    if getattr(args, "no_mediahoarder", False) or mhblock.get("enabled") is False:
+        mh.enabled = False
+    else:
+        if not mh.db:
+            mh.db = mediahoarder.discover()
+            if mh.db:
+                notes.append(f"mediahoarder: auto-discovered at {mh.db}")
+        elif mh.ready:
+            notes.append(f"mediahoarder: configured at {mh.db}")
+        if not mh.ready:
+            mh.enabled = False
+
+    mh.allow_delete = bool(getattr(args, "mh_allow_delete", False)
+                           or mhblock.get("allow_delete", False))
+    if mh.ready and mh.allow_delete:
+        notes.append("mediahoarder: file deletion ENABLED (files are removed from disk)")
+    elif mh.ready:
+        notes.append("mediahoarder: read-only (pass --mh-allow-delete to permit deletion)")
 
     if cfg.read_only:
         notes.append("READ-ONLY mode: deletion is disabled")

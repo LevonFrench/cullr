@@ -6,6 +6,37 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-27
+
+### Added
+
+* Media-Hoarder as a third library source. cullr reads its SQLite database
+  read-only and shows the library on the same poster wall, as
+  *Media-Hoarder movies* and *Media-Hoarder series*. The database is found
+  automatically in the usual install locations on Windows, macOS and Linux, or
+  pointed at with `--mh-db` / `CULLR_MH_DB`, and ignored with
+  `--no-mediahoarder`.
+* `--mh-allow-delete`, off by default. Media-Hoarder has no API, so deleting one
+  of its files means removing it from disk directly. Without the flag the source
+  is browsable and every delete is refused. `--read-only` and `--dry-run` still
+  take precedence, and the confirmation dialog counts Media-Hoarder items and
+  their files separately.
+* Drive chips understand UNC shares, so a library on a NAS reports real free
+  space per share.
+
+### Changed
+
+* `--check` reports Media-Hoarder alongside Radarr and Sonarr.
+* An item can say it has no artwork, so a library whose posters were never
+  cached locally renders placeholders instead of one failed image request per
+  card.
+
+### Fixed
+
+* Free space is now resolved per drive rather than by assuming every root in the
+  library has the same shape. A mix of drive letters and UNC shares previously
+  left the lettered drives unmeasured.
+
 ## [1.0.0] - 2026-08-27
 
 First public release.
@@ -36,5 +67,6 @@ First public release.
   linuxserver.io containers.
 * Safety switches: `--read-only`, `--dry-run`, `--no-audit`, `--check`.
 
-[Unreleased]: https://github.com/LevonFrench/cullr/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/LevonFrench/cullr/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/LevonFrench/cullr/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/LevonFrench/cullr/releases/tag/v1.0.0

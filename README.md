@@ -1,6 +1,7 @@
 # cullr
 
-Fast visual triage for reclaiming disk space from **Radarr** and **Sonarr**.
+Fast visual triage for reclaiming disk space from **Radarr**, **Sonarr** and
+**Media-Hoarder**.
 
 Deleting things in the *arr web UI is slow: scroll, click into a title, open a tab
 to read the plot, go back, delete, confirm, repeat. cullr puts the whole library on
@@ -71,6 +72,53 @@ before and after sizes.
 Movies only for now. Sonarr's release search is per-episode, and a mis-click there
 has a much larger blast radius.
 
+## Media-Hoarder
+
+[Media-Hoarder](https://github.com/theMK2k/Media-Hoarder) scans media folders and
+keeps what it finds in a SQLite file. cullr reads that file and puts the library
+on the same poster wall, so a collection that no *arr manages can be culled the
+same way. Pick **Media-Hoarder movies** or **Media-Hoarder series** from the
+library selector.
+
+The database is opened read-only and never written to. Media-Hoarder can be
+running at the same time. cullr looks for `media-hoarder.db` in the usual install
+locations on Windows, macOS and Linux, so normally there is nothing to configure;
+`--mh-db PATH` points it somewhere else and `--no-mediahoarder` ignores it.
+
+Series are shown whole, one row per series, with the episode count and the total
+those episodes occupy.
+
+### Deleting is different here, and off by default
+
+Media-Hoarder has no API. When cullr deletes a Radarr or Sonarr title it asks the
+*arr to do it; for Media-Hoarder there is nothing to ask, so cullr removes the
+file from disk itself. That is a bigger step:
+
+* no *arr sees it happen, so nothing updates its own records
+* a network share has no recycle bin
+* Media-Hoarder keeps listing the title until you rescan
+
+So it is disabled unless you ask for it:
+
+```bash
+python -m cullr --mh-allow-delete --open
+```
+
+Without that flag the source is browsable and the server refuses every
+Media-Hoarder delete. `--read-only` still wins over it, and `--dry-run` still
+rehearses without touching a file. The confirmation names Media-Hoarder items
+separately and says how many files are involved, since deleting one series row
+deletes every episode file under it.
+
+Two guards sit in front of the deleter: the file has to resolve inside one of the
+source paths Media-Hoarder itself recorded, and that check compares whole path
+segments, so a sibling directory whose name merely starts the same way is
+refused. Paths always come from the server's own snapshot, never from the
+browser.
+
+Downsizing stays Radarr-only, because it needs an indexer search that
+Media-Hoarder cannot do.
+
 ## Install
 
 Nothing to install. Clone or copy the folder and run it:
@@ -108,11 +156,14 @@ Windows, macOS, Linux and the linuxserver.io containers.
 --sonarr-key KEY
 --no-radarr              ignore Radarr
 --no-sonarr              ignore Sonarr
+--mh-db PATH             path to a Media-Hoarder media-hoarder.db
+--no-mediahoarder        ignore Media-Hoarder
 -c, --config PATH        path to a cullr.json
 
 --read-only              browse only; the server refuses every delete
 --dry-run                accept deletes and log them, never call the *arr API
 --no-audit               do not append to cullr-deletions.jsonl
+--mh-allow-delete        permit deleting Media-Hoarder files off disk
 
 --check                  verify connectivity, print a summary, exit
 --version
@@ -124,6 +175,7 @@ Windows, macOS, Linux and the linuxserver.io containers.
 CULLR_HOST  CULLR_PORT
 CULLR_RADARR_URL  RADARR_API_KEY
 CULLR_SONARR_URL  SONARR_API_KEY
+CULLR_MH_DB               path to media-hoarder.db
 CULLR_ACCESS_LOG=1        enable request logging
 ```
 
@@ -137,6 +189,7 @@ Looked up at `./cullr.json`, `$XDG_CONFIG_HOME/cullr/config.json`,
   "port": 8420,
   "radarr": { "url": "http://127.0.0.1:7878", "key": "YOUR_KEY" },
   "sonarr": { "url": "http://127.0.0.1:8989", "key": "YOUR_KEY" },
+  "mediahoarder": { "db": "/path/to/media-hoarder.db", "allow_delete": false },
   "read_only": false,
   "cache_ttl": 300
 }
@@ -173,6 +226,8 @@ Deletion is destructive and permanent. cullr defends against accidents in layers
 * the confirmation lists **every** title with its size and drive
 * `--dry-run` rehearses a full sweep without touching anything
 * `--read-only` disables deletion server-side; the UI hides the controls
+* Media-Hoarder files are deleted from disk with no *arr behind them, so that
+  source needs `--mh-allow-delete` on top of everything above
 * every deletion is appended to `cullr-deletions.jsonl` with timestamp, title,
   size and path
 * marks survive a page reload, so a long session is not lost to a stray refresh
@@ -191,7 +246,10 @@ what you removed. Leave it off if you only want the file gone for now.
   work the same as local ones.
 * The library snapshot is cached for `cache_ttl` seconds; `r` or `↻` forces a reload.
 * Sonarr entries are whole series. Season-level deletion is not exposed. That is
-  deliberate, since the blast radius of a mis-click is much larger.
+  deliberate, since the blast radius of a mis-click is much larger. Media-Hoarder
+  series behave the same way.
+* A title held in both Radarr and Media-Hoarder appears in both libraries,
+  because they are two views of the same file rather than two copies of it.
 
 ## License
 

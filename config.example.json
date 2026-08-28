@@ -1,7 +1,6 @@
 {
   "host": "127.0.0.1",
   "port": 8420,
-
   "radarr": {
     "url": "http://127.0.0.1:7878",
     "key": "PUT_YOUR_RADARR_API_KEY_HERE",
@@ -12,13 +11,16 @@
     "key": "PUT_YOUR_SONARR_API_KEY_HERE",
     "enabled": true
   },
-
+  "mediahoarder": {
+    "db": "",
+    "enabled": true,
+    "allow_delete": false
+  },
   "read_only": false,
   "dry_run": false,
   "audit": "cullr-deletions.jsonl",
   "cache_ttl": 300,
   "timeout": 300,
   "open_browser": false,
-
   "drives": []
 }

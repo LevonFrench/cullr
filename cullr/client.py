@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from .config import Config, Instance
+from .mediahoarder import MHError, MediaHoarder
 
 
 class ArrError(RuntimeError):
@@ -274,13 +275,18 @@ class Library:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self._lock = threading.Lock()
-        self._data: dict[str, list[dict]] = {"movie": [], "series": []}
+        self._data: dict[str, list[dict]] = {
+            "movie": [], "series": [], "mh": [], "mhseries": []}
         self._errors: dict[str, str] = {}
         self._at = 0.0
 
     def client(self, name: str) -> Optional[Arr]:
         inst = self.cfg.get(name)
         return Arr(inst, self.cfg.timeout) if inst else None
+
+    def mh(self) -> Optional[MediaHoarder]:
+        c = self.cfg.mediahoarder
+        return MediaHoarder(c.db, c.allow_delete) if c.ready else None
 
     def _fetch(self) -> None:
         self._errors = {}
@@ -298,6 +304,18 @@ class Library:
             except ArrError as e:
                 self._errors[name] = str(e)
                 self._data[key] = []
+
+        source = self.mh()
+        if not source:
+            self._data["mh"] = self._data["mhseries"] = []
+        else:
+            try:
+                got = source.items()
+                self._data["mh"] = got["mh"]
+                self._data["mhseries"] = got["mhseries"]
+            except MHError as e:
+                self._errors["mediahoarder"] = str(e)
+                self._data["mh"] = self._data["mhseries"] = []
         self._at = time.time()
 
     def data(self, force: bool = False) -> dict:
@@ -308,6 +326,8 @@ class Library:
             return {
                 "movies": self._data["movie"],
                 "series": self._data["series"],
+                "mh": self._data["mh"],
+                "mhseries": self._data["mhseries"],
                 "disks": self.disks(),
                 "errors": self._errors,
                 "generated": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -319,24 +339,29 @@ class Library:
 
     # ------------------------------------------------------------- disks
 
-    def _roots(self) -> list[str]:
+    def _roots(self) -> dict[str, str]:
+        """Map each drive label to the path whose free space it reports.
+
+        A Media-Hoarder library can live on UNC shares, so labels and mount
+        points are not the same string: the chip says `4k`, the free space is
+        measured against `\\\\host\\4k`. Items carry their own "root" when the two
+        differ; a bare drive letter is expanded the usual way.
+        """
         if self.cfg.drives:
-            return list(self.cfg.drives)
-        seen: set[str] = set()
+            return {(d[0].upper() if len(d) > 1 and d[1] == ":" else d): d
+                    for d in self.cfg.drives}
+        out: dict[str, str] = {}
         for items in self._data.values():
             for it in items:
                 d = it.get("drive") or ""
-                if d and d not in seen:
-                    seen.add(d)
-        if seen and all(len(s) == 1 for s in seen):        # windows letters
-            return sorted(f"{s}:\\" for s in seen)
-        roots = sorted(seen)
-        return roots or ["/"]
+                if not d or d in out:
+                    continue
+                out[d] = it.get("root") or (f"{d}:\\" if len(d) == 1 else d)
+        return out or {"/": "/"}
 
     def disks(self) -> dict:
         out: dict[str, dict] = {}
-        for root in self._roots():
-            label = root[0].upper() if len(root) > 1 and root[1] == ":" else root
+        for label, root in self._roots().items():
             try:
                 usage = shutil.disk_usage(root)
             except OSError:
