@@ -11,7 +11,7 @@ everything you marked in a single batch.
 python -m cullr --open
 ```
 
-No build step, no dependencies — standard library only, Python 3.9+.
+No build step, no dependencies. Standard library only, Python 3.9+.
 
 ![The library on one poster wall, largest file first](docs/screenshot-wall.png)
 
@@ -27,10 +27,10 @@ back, so you can see which disk the sweep actually frees before you commit to it
 * **Poster wall, biggest first.** Every decision is made against the file that costs
   you the most, so the first hundred choices reclaim the most space.
 * **Synopsis on hover.** Plot, studio, genres, rating, certificate, runtime, codec,
-  HDR type, exact size and full path — without leaving the grid.
+  HDR type, exact size and full path, without leaving the grid.
 * **Drill-down filters.** Search, studio, genre, quality tier, year range, size range,
   drive, monitored state. Stack them freely.
-* **Grouping.** By studio, genre, quality, drive or decade — each group shows its total
+* **Grouping.** By studio, genre, quality, drive or decade. Each group shows its total
   footprint and gets a *mark all* button, so a whole category goes in two clicks.
 * **Per-drive targeting.** Drive chips show live free space and turn red under 50 GB.
   As you mark, each chip shows what you would get back, so you can free the drive that
@@ -39,7 +39,7 @@ back, so you can see which disk the sweep actually frees before you commit to it
   anything happens. Deletions run through the *arr API, chunked, with a live log.
 * **Audit log.** Every deletion is appended to `cullr-deletions.jsonl`.
 
-## Downsizing — keep the title, drop the 60 GB copy
+## Downsizing: keep the title, drop the 60 GB copy
 
 Deleting is not the only way to get space back. A 57 GB 2160p remux and a 13 GB
 2160p web-dl are the same film; one of them costs you 44 GB. **Shift-click** (or
@@ -47,20 +47,21 @@ right-click, or press `s`) any poster to search your indexers for a smaller copy
 of that exact movie.
 
 The panel shows every candidate release smallest-first, with its quality, size,
-age, indexer, and — importantly — **how much you would save**. Set a size cap and
-pick one; cullr hands it to Radarr and the big file gets replaced on import.
+age, indexer, and the number that matters most: **how much you would save**. Set
+a size cap and pick one; cullr hands it to Radarr and the big file gets replaced
+on import.
 
 Radarr will not import a downgrade while the movie's current quality profile says
-the existing file already meets cutoff — every smaller release comes back
-rejected with *"Existing file meets cutoff"*. So the panel asks for a **target
-profile** and switches the movie onto it before grabbing. Skip that switch and
-every grab is refused.
+the existing file already meets cutoff. Every smaller release comes back rejected
+with *"Existing file meets cutoff"*. So the panel asks for a **target profile**
+and switches the movie onto it before grabbing. Skip that switch and every grab
+is refused.
 
 Options in the panel:
 
-* **target profile** — which profile the movie moves to (e.g. `HD-1080p`)
-* **max GB** — hides anything above the cap
-* **delete current file first** — frees the space immediately rather than at import
+* **target profile**: which profile the movie moves to (e.g. `HD-1080p`)
+* **max GB**: hides anything above the cap
+* **delete current file first**: frees the space immediately rather than at import
   time. Leaves a gap until the download lands, so it is off by default.
 
 Releases Radarr refuses to grab are shown greyed out with the reason, so you can
@@ -162,7 +163,7 @@ oldest · lowest rated · most obscure · recently added · longest held · titl
 
 *Most oversized for its quality tier* compares each file against the median size of
 everything else at the same quality, which surfaces the outliers worth re-grabbing at
-a sane bitrate — you keep the title, you just stop storing a 70 GB copy of it.
+a sane bitrate. You keep the title, you just stop storing a 70 GB copy of it.
 
 ## Safety
 
@@ -189,9 +190,9 @@ what you removed. Leave it off if you only want the file gone for now.
 * Posters are proxied through the *arr API, so remote and containerised instances
   work the same as local ones.
 * The library snapshot is cached for `cache_ttl` seconds; `r` or `↻` forces a reload.
-* Sonarr entries are whole series. Season-level deletion is not exposed — that is
+* Sonarr entries are whole series. Season-level deletion is not exposed. That is
   deliberate, since the blast radius of a mis-click is much larger.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT. See `LICENSE`.

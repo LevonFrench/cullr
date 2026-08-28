@@ -27,7 +27,7 @@ python -m cullr --open       # run it
 There is nothing to install. `pip install -e .` is optional and only gives you
 a `cullr` command.
 
-You do not need a real Radarr/Sonarr to work on the UI — point cullr at a test
+You do not need a real Radarr/Sonarr to work on the UI. Point cullr at a test
 instance, or use `--dry-run` so nothing is ever deleted.
 
 ## Before you open a pull request

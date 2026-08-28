@@ -18,18 +18,18 @@ cullr is a single-user local tool. It assumes:
 
 So these are not vulnerabilities:
 
-* no login on the web UI — bind it to loopback, or put a reverse proxy with
+* no login on the web UI. Bind it to loopback, or put a reverse proxy with
   auth in front of it
 * the API key being readable from your own config file or `config.xml`
 
 These are, and are in scope:
 
-* the API key leaking anywhere it should not go — into a URL that gets logged,
+* the API key leaking anywhere it should not go: into a URL that gets logged,
   an error message, the served HTML, or a request to a host that is not your
   configured Radarr/Sonarr
 * path traversal or arbitrary file read through any HTTP route, including the
   static file handler and the poster proxy
-* server-side request forgery — getting cullr to fetch a host you did not
+* server-side request forgery: getting cullr to fetch a host you did not
   configure
 * deleting anything without the confirmation step, or a way around
   `--read-only` or `--dry-run`

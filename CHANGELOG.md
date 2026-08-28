@@ -16,7 +16,7 @@ First public release.
 * Hover synopsis: plot, studio, genres, rating, certificate, runtime, codec,
   HDR type, exact size and full path.
 * Filters: search, studio, genre, quality tier, year range, size range, drive,
-  monitored state — stackable.
+  monitored state. All stackable.
 * Grouping by studio, genre, quality, drive or decade, with a per-group total
   footprint and a *mark all* button.
 * Per-drive chips showing live free space and projected reclaim, turning red
