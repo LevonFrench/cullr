@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>cullr</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🧹</text></svg>">
+</head>
+<body>
+
+<header id="hdr">
+  <div class="row">
+    <span class="brand">cullr <small id="ver"></small></span>
+    <span id="banners"></span>
+    <input type="search" id="q" placeholder="search title / studio…  (/)" aria-label="Search title or studio">
+    <select id="kind" title="Library" aria-label="Library">
+      <option value="movie">Movies</option>
+      <option value="series">TV series</option>
+    </select>
+    <select id="studio" aria-label="Filter by studio"><option value="">All studios</option></select>
+    <select id="genre" aria-label="Filter by genre"><option value="">All genres</option></select>
+    <select id="qual" aria-label="Filter by quality"><option value="">All quality</option></select>
+    <span class="sep"></span>
+    <span class="stat">yr</span>
+    <input type="number" id="y1" placeholder="from" min="1870" max="2100" aria-label="Year from">
+    <input type="number" id="y2" placeholder="to" min="1870" max="2100" aria-label="Year to">
+    <span class="stat">GB</span>
+    <input type="number" id="mingb" placeholder="min" min="0" step="1" aria-label="Minimum size in GB">
+    <input type="number" id="maxgb" placeholder="max" min="0" step="1" aria-label="Maximum size in GB">
+  </div>
+  <div class="row">
+    <select id="sort" aria-label="Sort by">
+      <option value="size">Largest first</option>
+      <option value="bloat">Most oversized for quality</option>
+      <option value="gph">Most GB per hour</option>
+      <option value="year">Newest</option>
+      <option value="yearold">Oldest</option>
+      <option value="rating">Lowest rated</option>
+      <option value="votes">Most obscure</option>
+      <option value="added">Recently added</option>
+      <option value="addedold">Longest held</option>
+      <option value="title">Title A–Z</option>
+    </select>
+    <select id="groupby" aria-label="Group by">
+      <option value="">No grouping</option>
+      <option value="studio">Group by studio</option>
+      <option value="genre">Group by genre</option>
+      <option value="quality">Group by quality</option>
+      <option value="drive">Group by drive</option>
+      <option value="decade">Group by decade</option>
+    </select>
+    <label class="chk"><input type="checkbox" id="unmon"> unmonitored only</label>
+    <label class="chk"><input type="checkbox" id="markedonly"> marked only</label>
+    <span class="sep"></span>
+    <button class="btn sm" id="selall" title="Mark everything matching the current filters">Mark all shown</button>
+    <button class="btn sm" id="invert" title="Invert marks within the current filters">Invert</button>
+    <button class="btn sm" id="clear">Clear</button>
+    <span class="sep"></span>
+    <select id="preset" title="Saved filter presets" aria-label="Saved filter presets"><option value="">Presets…</option></select>
+    <button class="btn sm" id="savepreset">Save</button>
+    <button class="btn sm" id="delpreset" title="Delete the selected preset" aria-label="Delete the selected preset">✕</button>
+    <span class="grow" style="flex:1"></span>
+    <span class="stat">size</span>
+    <input type="range" id="cardsize" min="80" max="220" step="10" value="118" style="width:90px" aria-label="Card size">
+    <button class="btn sm" id="theme" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    <button class="btn sm" id="keys" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">⌨</button>
+    <button class="btn sm" id="refresh" title="Reload from Radarr/Sonarr" aria-label="Reload from Radarr/Sonarr">↻</button>
+  </div>
+  <div class="disks" id="disks"></div>
+</header>
+
+<main id="main"><div class="empty">Loading library…</div></main>
+
+<div id="peek"></div>
+
+<footer>
+  <span class="stat" id="shown">—</span>
+  <span class="sep"></span>
+  <span class="stat marked">marked <b id="nmark">0</b></span>
+  <span class="stat marked">reclaim <b id="gmark">0 GB</b></span>
+  <span id="perdrive" class="stat"></span>
+  <span class="grow"></span>
+  <button class="btn sm ghost" id="export" title="Download the current view as CSV">⤓ CSV</button>
+  <label class="chk" title="Also add an import exclusion so it is never re-downloaded">
+    <input type="checkbox" id="exclude"> block re-download
+  </label>
+  <button class="btn ghost" id="unmarkall">Clear marks</button>
+  <button class="btn danger" id="commit" disabled>Delete marked…</button>
+</footer>
+
+<div id="modal"><div class="sheet">
+  <h2 id="mtitle">Confirm</h2>
+  <div class="body" id="mbody"></div>
+  <div class="foot" id="mfoot"></div>
+</div></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

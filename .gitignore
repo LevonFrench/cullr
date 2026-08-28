@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# local config and audit trail — never commit these, they hold API keys
+cullr.json
+config.json
+cullr-deletions.jsonl
+
+# agent/session scaffolding — local only, not part of the public release
+HANDOFF.md
+task.md
+walkthrough.md
+.wiki/
+.claude/
+.codebase-memory/

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cullr"
+version = "1.0.0"
+description = "Fast visual triage for reclaiming disk space from Radarr and Sonarr"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["radarr", "sonarr", "media", "disk-space", "servarr", "cleanup"]
+classifiers = [
+  "Environment :: Console",
+  "Environment :: Web Environment",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video",
+  "Topic :: System :: Archiving",
+]
+dependencies = []
+
+[project.scripts]
+cullr = "cullr.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/LevonFrench/cullr"
+Issues = "https://github.com/LevonFrench/cullr/issues"
+
+[tool.setuptools]
+packages = ["cullr"]
+
+[tool.setuptools.package-data]
+cullr = ["static/*"]
