@@ -307,7 +307,7 @@ class Library:
 
         source = self.mh()
         if not source:
-            self._data["mh"] = self._data["mhseries"] = []
+            self._data["mh"], self._data["mhseries"] = [], []
         else:
             try:
                 got = source.items()
@@ -315,7 +315,7 @@ class Library:
                 self._data["mhseries"] = got["mhseries"]
             except MHError as e:
                 self._errors["mediahoarder"] = str(e)
-                self._data["mh"] = self._data["mhseries"] = []
+                self._data["mh"], self._data["mhseries"] = [], []
         self._at = time.time()
 
     def data(self, force: bool = False) -> dict:
@@ -358,6 +358,7 @@ class Library:
                     continue
                 out[d] = it.get("root") or (f"{d}:\\" if len(d) == 1 else d)
         return out or {"/": "/"}
+
 
     def disks(self) -> dict:
         out: dict[str, dict] = {}

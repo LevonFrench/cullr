@@ -367,7 +367,14 @@ for (const id of ["#q", "#studio", "#genre", "#qual", "#y1", "#y2", "#mingb", "#
   $(id).addEventListener("input", () => render());
 
 for (const sel of ["#source", "#kind"])
-  $(sel).addEventListener("change", () => { cursor = -1; fillFacets(); render(); });
+  $(sel).addEventListener("change", () => {
+    cursor = -1;
+    // Drop drive filters the new library has no chip for, otherwise the filter
+    // keeps applying with no way left to switch it off.
+    const inUse = new Set(pool().map(it => it.drive));
+    for (const d of [...drives]) if (!inUse.has(d)) drives.delete(d);
+    fillFacets(); render();
+  });
 $("#clear").addEventListener("click", resetFilters);
 $("#unmarkall").addEventListener("click", () => { marks.clear(); render(true); });
 $("#selall").addEventListener("click", () => { view.forEach(it => marks.set(keyOf(it), it)); render(true); });
@@ -441,7 +448,11 @@ $("#delpreset").addEventListener("click", () => {
 });
 $("#preset").addEventListener("change", () => {
   const s = LS.get("presets", {})[$("#preset").value]; if (!s) return;
-  $("#source").value = s.source || "arr";
+  // A preset saved on a machine with both sources can name one this server does
+  // not have, which would leave the picker blank and the grid permanently empty.
+  const src = $("#source");
+  src.value = s.source || "arr";
+  if (!src.value && src.options.length) src.value = src.options[0].value;
   $("#kind").value = s.kind || "movie"; fillFacets();
   for (const [k, sel] of Object.entries({ q: "#q", studio: "#studio", genre: "#genre",
       qual: "#qual", y1: "#y1", y2: "#y2", mingb: "#mingb", maxgb: "#maxgb",
@@ -671,8 +682,10 @@ $("#commit").addEventListener("click", () => {
     <div class="warn"><b>This permanently deletes ${items.length} item${items.length > 1 ? "s" : ""}
       and their files from disk.</b><br>
       Reclaims <b>${fmt(tot)}</b> — ${Object.entries(per).sort().map(([d, v]) => `${d}: ${fmt(v)}`).join(", ")}.<br>
-      ${excl ? "They will also be excluded from future imports so nothing re-grabs them."
-             : "They stay eligible for re-download if something still monitors them."}
+      ${mh.length === items.length
+        ? "Media-Hoarder has no import list, so the re-download toggle does not apply here."
+        : excl ? "They will also be excluded from future imports so nothing re-grabs them."
+               : "They stay eligible for re-download if something still monitors them."}
       <br>This cannot be undone from here.</div>
     <div class="dlist">${items.map(it =>
       `<div><span class="n">${esc(it.title)} <span style="color:var(--faint)">${it.year || ""}</span></span>

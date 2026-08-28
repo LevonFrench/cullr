@@ -24,7 +24,7 @@ from typing import Optional
 from . import mediahoarder
 
 APP = "cullr"
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 
 # ---------------------------------------------------------------- discovery
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import sqlite3
 from pathlib import Path
 from typing import Iterable, Optional
@@ -113,6 +114,33 @@ def _drive_of(source_path: str) -> str:
     return "/" + parts[0] if parts else "/"
 
 
+def _labels_for(srcs: dict) -> dict:
+    r"""Chip label per source path id, kept unique.
+
+    A share name alone is the readable label, but two hosts can both export
+    "media". When that happens the colliding ones fall back to host\share, so
+    each chip still measures its own volume instead of silently reporting the
+    first one's free space for both.
+    """
+    roots = {i: _root_of(p) for i, p in srcs.items()}
+    short = {i: _drive_of(p) for i, p in srcs.items()}
+    clash = set()
+    seen: dict = {}
+    for i, name in short.items():
+        if name in seen and roots[seen[name]] != roots[i]:
+            clash.add(name)
+        seen.setdefault(name, i)
+    out = {}
+    for i, name in short.items():
+        if name not in clash:
+            out[i] = name
+            continue
+        r = roots[i]
+        parts = [x for x in r.replace("\\", "/").split("/") if x]
+        out[i] = "\\".join(parts[-2:]) if len(parts) > 1 else name
+    return out
+
+
 def _root_of(source_path: str) -> str:
     """The mount point to measure free space against."""
     p = (source_path or "").strip()
@@ -124,6 +152,12 @@ def _root_of(source_path: str) -> str:
     if _is_unc(p):
         return "\\\\" + "\\".join(parts[:2]) if len(parts) > 1 else p
     return p
+
+
+def _first_segment(rel: str) -> str:
+    """The leading directory of a relative path, whichever separator it uses."""
+    parts = [x for x in re.split(r"[\\/]", rel or "") if x]
+    return parts[0] if parts else ""
 
 
 def _has_poster(rel: Optional[str], have: set) -> bool:
@@ -154,8 +188,16 @@ class MediaHoarder:
     # ------------------------------------------------------------ reading
 
     def _connect(self) -> sqlite3.Connection:
+        # as_uri() percent-encodes, which matters because SQLite ends the
+        # filename at the first '#' or '?'. A user directory like "bob#1" would
+        # otherwise open a different path read-write instead of this one
+        # read-only.
         try:
-            c = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, timeout=10)
+            uri = Path(self.db_path).resolve().as_uri() + "?mode=ro"
+        except (OSError, ValueError) as e:
+            raise MHError(f"cannot open {self.db_path}: {e}") from e
+        try:
+            c = sqlite3.connect(uri, uri=True, timeout=10)
         except sqlite3.Error as e:
             raise MHError(f"cannot open {self.db_path}: {e}") from e
         c.row_factory = sqlite3.Row
@@ -173,16 +215,23 @@ class MediaHoarder:
 
     def source_paths(self) -> dict[int, str]:
         with self._connect() as c:
-            return {r["id_SourcePaths"]: r["Path"]
-                    for r in c.execute("select id_SourcePaths, Path from tbl_SourcePaths")}
+            try:
+                return {r["id_SourcePaths"]: r["Path"]
+                        for r in c.execute("select id_SourcePaths, Path from tbl_SourcePaths")}
+            except sqlite3.Error as e:
+                raise MHError(f"reading source paths failed: {e}") from e
 
     def _genres(self, c: sqlite3.Connection) -> dict[int, list[str]]:
         out: dict[int, list[str]] = {}
-        for r in c.execute(
-            "select mg.id_Movies id, g.Name name from tbl_Movies_Genres mg "
-            "join tbl_Genres g on g.id_Genres = mg.id_Genres"
-        ):
-            out.setdefault(r["id"], []).append(r["name"])
+        try:
+            rows = c.execute(
+                "select mg.id_Movies id, g.Name name from tbl_Movies_Genres mg "
+                "join tbl_Genres g on g.id_Genres = mg.id_Genres"
+            )
+            for r in rows:
+                out.setdefault(r["id"], []).append(r["name"])
+        except sqlite3.Error:
+            return {}
         return out
 
     def _codecs(self, c: sqlite3.Connection) -> dict[int, str]:
@@ -195,8 +244,11 @@ class MediaHoarder:
             )
         except sqlite3.Error:
             return out
-        for r in rows:
-            out.setdefault(r["id"], r["f"] or "")
+        try:
+            for r in rows:
+                out.setdefault(r["id"], r["f"] or "")
+        except sqlite3.Error:
+            return {}
         return out
 
     def _cached_posters(self) -> set[str]:
@@ -213,21 +265,35 @@ class MediaHoarder:
         except OSError:
             return set()
 
+    def _read_all(self) -> tuple[dict, dict, dict, list[dict]]:
+        """Pull everything items() needs in one connection.
+
+        Every sqlite failure becomes an MHError here. Schema drift in an older
+        or damaged database must not escape as a raw sqlite3.Error, because that
+        would take the whole library down with it, Radarr and Sonarr included.
+        """
+        with self._connect() as c:
+            try:
+                srcs = {r["id_SourcePaths"]: r["Path"] for r in
+                        c.execute("select id_SourcePaths, Path from tbl_SourcePaths")}
+                genres = self._genres(c)
+                codecs = self._codecs(c)
+                rows = [dict(r) for r in c.execute(
+                    "select id_Movies, id_SourcePaths, RelativePath, Filename, Size, Name, Name2,"
+                    " IMDB_tconst, IMDB_startYear, IMDB_runtimeMinutes, IMDB_rating, IMDB_numVotes,"
+                    " IMDB_plotSummary, IMDB_posterSmall_URL, MI_Quality, MI_Duration_Seconds,"
+                    " Series_id_Movies_Owner, Extra_id_Movies_Owner, isRemoved, created_at"
+                    " from tbl_Movies"
+                )]
+            except sqlite3.Error as e:
+                raise MHError(f"reading the Media-Hoarder database failed: {e}") from e
+        return srcs, genres, codecs, rows
+
     def items(self) -> dict[str, list[dict]]:
         """Return {"mh": [movies], "mhseries": [series]} in cullr's item shape."""
         have = self._cached_posters()
-        with self._connect() as c:
-            srcs = {r["id_SourcePaths"]: r["Path"]
-                    for r in c.execute("select id_SourcePaths, Path from tbl_SourcePaths")}
-            genres = self._genres(c)
-            codecs = self._codecs(c)
-            rows = [dict(r) for r in c.execute(
-                "select id_Movies, id_SourcePaths, RelativePath, Filename, Size, Name, Name2,"
-                " IMDB_tconst, IMDB_startYear, IMDB_runtimeMinutes, IMDB_rating, IMDB_numVotes,"
-                " IMDB_plotSummary, IMDB_posterSmall_URL, MI_Quality, MI_Duration_Seconds,"
-                " Series_id_Movies_Owner, Extra_id_Movies_Owner, isRemoved, created_at"
-                " from tbl_Movies"
-            )]
+        srcs, genres, codecs, rows = self._read_all()
+        labels = _labels_for(srcs)
 
         # The row that owns a series carries the title but no file and no size,
         # so it has to survive the size filter to be used as a parent below.
@@ -242,21 +308,21 @@ class MediaHoarder:
             tiers.setdefault(r["MI_Quality"] or "Unknown", []).append(r["Size"])
         med = {q: _median(v) for q, v in tiers.items()}
 
-        out_movies = [self._shape(r, srcs, genres, codecs, med, have) for r in movies]
+        out_movies = [self._shape(r, srcs, labels, genres, codecs, med, have) for r in movies]
         out_movies.sort(key=lambda x: -x["size"])
 
         by_owner: dict[int, list[dict]] = {}
         for r in episodes:
             by_owner.setdefault(r["Series_id_Movies_Owner"], []).append(r)
         parents = {r["id_Movies"]: r for r in rows}
-        out_series = [self._shape_series(oid, eps, parents.get(oid), srcs, genres, have)
+        out_series = [self._shape_series(oid, eps, parents.get(oid), srcs, labels, genres, have)
                       for oid, eps in by_owner.items()]
         out_series.sort(key=lambda x: -x["size"])
 
         return {"mh": out_movies, "mhseries": out_series}
 
-    def _shape(self, r: dict, srcs: dict, genres: dict, codecs: dict, med: dict,
-               have: set) -> dict:
+    def _shape(self, r: dict, srcs: dict, labels: dict, genres: dict, codecs: dict,
+               med: dict, have: set) -> dict:
         src = srcs.get(r["id_SourcePaths"], "")
         size = r["Size"] or 0
         q = r["MI_Quality"] or "Unknown"
@@ -265,7 +331,7 @@ class MediaHoarder:
             "id": r["id_Movies"], "kind": "mh",
             "title": r["Name"] or r["Name2"] or r["Filename"] or "",
             "year": r["IMDB_startYear"] or 0,
-            "drive": _drive_of(src), "root": _root_of(src),
+            "drive": labels.get(r["id_SourcePaths"], _drive_of(src)), "root": _root_of(src),
             "size": size, "quality": q, "runtime": runtime,
             "rating": round(r["IMDB_rating"] or 0, 1), "votes": r["IMDB_numVotes"] or 0,
             "codec": codecs.get(r["id_Movies"], ""), "hdr": "",
@@ -281,18 +347,19 @@ class MediaHoarder:
         }
 
     def _shape_series(self, oid: int, eps: list[dict], parent: Optional[dict],
-                      srcs: dict, genres: dict, have: set) -> dict:
+                      srcs: dict, labels: dict, genres: dict, have: set) -> dict:
         size = sum(e["Size"] or 0 for e in eps)
         secs = sum(e["MI_Duration_Seconds"] or 0 for e in eps)
         runtime = round(secs / 60)
         p = parent or {}
         src = srcs.get(p.get("id_SourcePaths") or eps[0]["id_SourcePaths"], "")
-        seasons = {e["RelativePath"].split("\\")[0] for e in eps if e["RelativePath"]}
+        seasons = {_first_segment(e["RelativePath"]) for e in eps if e["RelativePath"]}
         return {
             "id": oid, "kind": "mhseries",
             "title": p.get("Name") or p.get("Name2") or "(series)",
             "year": p.get("IMDB_startYear") or 0,
-            "drive": _drive_of(src), "root": _root_of(src),
+            "drive": labels.get(p.get("id_SourcePaths") or eps[0]["id_SourcePaths"],
+                                _drive_of(src)), "root": _root_of(src),
             "size": size, "quality": f"{len(eps)} eps", "runtime": runtime,
             "rating": round(p.get("IMDB_rating") or 0, 1), "votes": p.get("IMDB_numVotes") or 0,
             "codec": "", "hdr": "", "monitored": True, "bloat": 0,
@@ -304,7 +371,7 @@ class MediaHoarder:
             "poster": _has_poster(p.get("IMDB_posterSmall_URL"), have),
             "seasons": len(seasons), "episodes": len(eps),
             "status": "",
-            "path": _join(src, (p.get("RelativePath") or "").split("\\")[0]),
+            "path": _join(src, _first_segment(p.get("RelativePath") or "")),
             "files": [_join(srcs.get(e["id_SourcePaths"], ""),
                             e["RelativePath"] or e["Filename"] or "") for e in eps],
         }
@@ -314,9 +381,12 @@ class MediaHoarder:
     def poster(self, item_id: int) -> Optional[tuple[bytes, str]]:
         """Return (bytes, content-type) for a locally cached poster, or None."""
         with self._connect() as c:
-            row = c.execute(
-                "select IMDB_posterSmall_URL p from tbl_Movies where id_Movies = ?",
-                (int(item_id),)).fetchone()
+            try:
+                row = c.execute(
+                    "select IMDB_posterSmall_URL p from tbl_Movies where id_Movies = ?",
+                    (int(item_id),)).fetchone()
+            except sqlite3.Error:
+                return None
         rel = (row["p"] if row else None) or ""
         if not rel:
             return None
@@ -345,13 +415,22 @@ class MediaHoarder:
                           "start cullr with --mh-allow-delete to enable it")
         if not path:
             raise MHError("no path recorded for this item")
-        target = Path(path)
+        # Resolve first. Comparing the raw string would let a ".." segment or a
+        # symlinked season directory match a source path here and then unlink
+        # something else entirely.
+        try:
+            target = Path(path).resolve()
+        except OSError as e:
+            raise MHError(f"cannot resolve {path}: {e}") from e
+        t = str(target)
         for root in roots:
             if not root:
                 continue
-            r = str(Path(root)).rstrip("\\/")
-            t = str(target)
-            if t == r or t.startswith(r + "\\") or t.startswith(r + "/"):
+            try:
+                r = str(Path(root).resolve()).rstrip("\\/")
+            except OSError:
+                continue
+            if t == r or t.startswith(r + os.sep):
                 break
         else:
             raise MHError(f"refusing to delete outside a Media-Hoarder source path: {path}")

@@ -322,13 +322,22 @@ class Handler(BaseHTTPRequestHandler):
                         _audit(self.cfg, rec)
                         continue
                     targets = ref.get("files") or ([ref.get("path")] if ref.get("path") else [])
+                    if not targets:
+                        # No paths in the snapshot means the source went away
+                        # between the page load and this request. Deleting
+                        # nothing is a failure, not a quiet success.
+                        rec["ok"] = False
+                        rec["error"] = "no file path known for this item; reload and retry"
+                        results.append({**base, "ok": False, "error": rec["error"]})
+                        _audit(self.cfg, rec)
+                        continue
                     try:
                         freed, errors = source.delete_files(targets)
                     except MHError as e:
                         freed, errors = 0, [str(e)]
                     rec["files"] = len(targets)
                     rec["freed"] = freed
-                    rec["ok"] = bool(targets) and not errors
+                    rec["ok"] = not errors
                     if errors:
                         rec["error"] = "; ".join(errors[:3])
                         results.append({**base, "ok": False, "error": rec["error"]})

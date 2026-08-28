@@ -6,6 +6,42 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-27
+
+Fixes from a review of the Media-Hoarder work. Nothing here changes what cullr
+does; it changes what it does when something is wrong.
+
+### Fixed
+
+* A Media-Hoarder delete that removed no files reported success to the browser.
+  If the source became unreachable between loading the page and confirming, the
+  server had no path for any marked item, deleted nothing, and answered `ok`,
+  so the UI showed "deleted, N GB reclaimed" and cleared the marks while the
+  audit log recorded a failure. Deleting nothing is now an explicit error.
+* A damaged or older Media-Hoarder database no longer takes the whole library
+  down. Its queries raised a bare `sqlite3.Error` that escaped to `/api/data` as
+  a 500, blanking the grid including working Radarr and Sonarr entries, which
+  could hit a pure-Radarr user who merely had a `media-hoarder.db` on disk.
+  Every query path now reports through the source's own error type.
+* The delete guard compares resolved paths. It matched raw strings, so a `..`
+  segment inside a recorded path could pass the source-path check and then
+  unlink something outside it.
+* The read-only database URI is percent-encoded. SQLite ends a URI filename at
+  the first `#` or `?`, so a user directory such as `bob#1` silently dropped
+  `mode=ro` and opened a different path read-write.
+* Season counting and the series folder split on either path separator. On a
+  macOS or Linux install a three-season show reported one season per episode.
+* Two hosts exporting the same share name get separate drive chips. Both
+  collapsed into one label that measured only the first host's free space, so
+  the reclaim preview was wrong for every item on the second.
+* A drive filter is cleared when it no longer matches the visible library.
+  Switching source with a drive chip active left an invisible filter applied
+  and an empty grid with no chip left to switch off.
+* A saved preset naming a source this server does not have falls back to an
+  available one instead of leaving the picker blank and the grid empty.
+* The confirmation no longer offers the re-download toggle's explanation for a
+  selection that is entirely Media-Hoarder, where it does not apply.
+
 ## [1.1.1] - 2026-08-27
 
 ### Changed
@@ -79,7 +115,8 @@ First public release.
   linuxserver.io containers.
 * Safety switches: `--read-only`, `--dry-run`, `--no-audit`, `--check`.
 
-[Unreleased]: https://github.com/LevonFrench/cullr/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/LevonFrench/cullr/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/LevonFrench/cullr/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/LevonFrench/cullr/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/LevonFrench/cullr/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/LevonFrench/cullr/releases/tag/v1.0.0
