@@ -14,11 +14,13 @@
     <span class="brand">cullr <small id="ver"></small></span>
     <span id="banners"></span>
     <input type="search" id="q" placeholder="search title / studio…  (/)" aria-label="Search title or studio">
+    <select id="source" title="Source" aria-label="Library source">
+      <option value="arr">Radarr / Sonarr</option>
+      <option value="mh">Media-Hoarder</option>
+    </select>
     <select id="kind" title="Library" aria-label="Library">
       <option value="movie">Movies</option>
       <option value="series">TV series</option>
-      <option value="mh">Media-Hoarder movies</option>
-      <option value="mhseries">Media-Hoarder series</option>
     </select>
     <select id="studio" aria-label="Filter by studio"><option value="">All studios</option></select>
     <select id="genre" aria-label="Filter by genre"><option value="">All genres</option></select>

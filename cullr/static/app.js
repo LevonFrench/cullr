@@ -1,5 +1,5 @@
 "use strict";
-/* cullr UI — dense poster triage over the Radarr/Sonarr libraries. */
+/* cullr UI: dense poster triage over the Radarr, Sonarr and Media-Hoarder libraries. */
 
 const $  = s => document.querySelector(s);
 const GB = 2 ** 30, TB = 2 ** 40;
@@ -24,7 +24,14 @@ let rendered = 0;
 const PAGE = 300;
 
 const keyOf = it => it.kind + ":" + it.id;
-const pool  = () => DATA[$("#kind").value] || [];
+// The visible library is a source (Radarr/Sonarr or Media-Hoarder) crossed with
+// a media type, so the two pickers together name one bucket in DATA.
+const bucket = () => {
+  const mh = $("#source").value === "mh";
+  return $("#kind").value === "series" ? (mh ? "mhseries" : "series")
+                                       : (mh ? "mh" : "movie");
+};
+const pool  = () => DATA[bucket()] || [];
 const everything = () => [...DATA.movie, ...DATA.series, ...DATA.mh, ...DATA.mhseries];
 
 /* ------------------------------------------------------------ load */
@@ -39,6 +46,17 @@ async function boot() {
   if (CONF.dry_run)   b.push(`<span class="banner dry">DRY-RUN</span>`);
   $("#banners").innerHTML = b.join(" ");
   if (CONF.read_only) { $("#commit").disabled = true; $("#commit").title = "server is read-only"; }
+
+  // Offer only the sources this server actually has, and skip the picker
+  // entirely when there is nothing to pick between.
+  const src = CONF.sources || {};
+  const has = { arr: !!(src.radarr || src.sonarr), mh: !!src.mediahoarder };
+  const sel = $("#source");
+  for (const o of [...sel.options]) if (!has[o.value]) o.remove();
+  sel.hidden = sel.options.length < 2;
+  if (sel.options.length) sel.value = LS.get("source", sel.options[0].value);
+  if (!has[sel.value] && sel.options.length) sel.value = sel.options[0].value;
+  sel.addEventListener("change", () => LS.set("source", sel.value));
 
   const th = LS.get("theme", "");
   if (th) document.documentElement.setAttribute("data-theme", th);
@@ -222,7 +240,12 @@ function showMore() {
 function renderDisks() {
   const gain = {};
   for (const it of marks.values()) gain[it.drive] = (gain[it.drive] || 0) + it.size;
-  $("#disks").innerHTML = Object.entries(DATA.disks).sort().map(([lt, d]) => {
+  // Only show drives the visible library actually sits on. A Radarr drive is
+  // noise while you are culling Media-Hoarder, because nothing you mark here
+  // can ever change it.
+  const inUse = new Set(pool().map(it => it.drive));
+  $("#disks").innerHTML = Object.entries(DATA.disks)
+    .filter(([lt]) => inUse.has(lt)).sort().map(([lt, d]) => {
     const crit = d.free < 50 * GB ? " crit" : "";
     const on = drives.has(lt) ? " on" : "";
     const pct = d.total ? Math.round(100 * (d.total - d.free) / d.total) : 0;
@@ -343,7 +366,8 @@ for (const id of ["#q", "#studio", "#genre", "#qual", "#y1", "#y2", "#mingb", "#
                   "#sort", "#groupby", "#unmon", "#markedonly"])
   $(id).addEventListener("input", () => render());
 
-$("#kind").addEventListener("change", () => { fillFacets(); render(); });
+for (const sel of ["#source", "#kind"])
+  $(sel).addEventListener("change", () => { cursor = -1; fillFacets(); render(); });
 $("#clear").addEventListener("click", resetFilters);
 $("#unmarkall").addEventListener("click", () => { marks.clear(); render(true); });
 $("#selall").addEventListener("click", () => { view.forEach(it => marks.set(keyOf(it), it)); render(true); });
@@ -379,7 +403,7 @@ $("#export").addEventListener("click", () => {
     cols.map(c => `"${String(r[c] ?? "").replace(/"/g, '""')}"`).join(","))).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-  a.download = `cullr-${$("#kind").value}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `cullr-${bucket()}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
 });
 
@@ -396,7 +420,8 @@ const filterState = () => ({
   q: $("#q").value, studio: $("#studio").value, genre: $("#genre").value, qual: $("#qual").value,
   y1: $("#y1").value, y2: $("#y2").value, mingb: $("#mingb").value, maxgb: $("#maxgb").value,
   sort: $("#sort").value, groupby: $("#groupby").value,
-  unmon: $("#unmon").checked, drives: [...drives], kind: $("#kind").value,
+  unmon: $("#unmon").checked, drives: [...drives],
+  source: $("#source").value, kind: $("#kind").value,
 });
 
 function loadPresets() {
@@ -416,6 +441,7 @@ $("#delpreset").addEventListener("click", () => {
 });
 $("#preset").addEventListener("change", () => {
   const s = LS.get("presets", {})[$("#preset").value]; if (!s) return;
+  $("#source").value = s.source || "arr";
   $("#kind").value = s.kind || "movie"; fillFacets();
   for (const [k, sel] of Object.entries({ q: "#q", studio: "#studio", genre: "#genre",
       qual: "#qual", y1: "#y1", y2: "#y2", mingb: "#mingb", maxgb: "#maxgb",

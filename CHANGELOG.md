@@ -6,6 +6,18 @@ this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-27
+
+### Changed
+
+* The library selector is now two controls: a source (Radarr / Sonarr, or
+  Media-Hoarder) and a media type (movies or TV series). Previously all four
+  combinations shared one dropdown, which made the source implicit. The source
+  picker is hidden when only one source is configured, and the choice persists
+  and is stored with presets.
+* Drive chips show only the drives the selected source actually uses. A drive
+  belonging to another source could never be changed by what you marked.
+
 ## [1.1.0] - 2026-08-27
 
 ### Added
@@ -67,6 +79,7 @@ First public release.
   linuxserver.io containers.
 * Safety switches: `--read-only`, `--dry-run`, `--no-audit`, `--check`.
 
-[Unreleased]: https://github.com/LevonFrench/cullr/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/LevonFrench/cullr/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/LevonFrench/cullr/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/LevonFrench/cullr/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/LevonFrench/cullr/releases/tag/v1.0.0

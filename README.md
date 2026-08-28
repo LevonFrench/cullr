@@ -33,6 +33,8 @@ back, so you can see which disk the sweep actually frees before you commit to it
   drive, monitored state. Stack them freely.
 * **Grouping.** By studio, genre, quality, drive or decade. Each group shows its total
   footprint and gets a *mark all* button, so a whole category goes in two clicks.
+* **Two sources.** Radarr and Sonarr over their APIs, plus Media-Hoarder read
+  straight from its database. Pick between them at the top left.
 * **Per-drive targeting.** Drive chips show live free space and turn red under 50 GB.
   As you mark, each chip shows what you would get back, so you can free the drive that
   is actually full instead of one that is not.
@@ -77,8 +79,16 @@ has a much larger blast radius.
 [Media-Hoarder](https://github.com/theMK2k/Media-Hoarder) scans media folders and
 keeps what it finds in a SQLite file. cullr reads that file and puts the library
 on the same poster wall, so a collection that no *arr manages can be culled the
-same way. Pick **Media-Hoarder movies** or **Media-Hoarder series** from the
-library selector.
+same way.
+
+Two pickers sit at the top left: the first chooses the source, **Radarr / Sonarr**
+or **Media-Hoarder**, and the second chooses **Movies** or **TV series** within
+it. When only one source is configured the source picker is hidden, so nothing
+changes for a setup that has only the *arrs. The choice is remembered between
+visits and saved with a preset.
+
+The drive chips follow the selected source, since a drive the visible library
+does not sit on can never be affected by what you mark.
 
 The database is opened read-only and never written to. Media-Hoarder can be
 running at the same time. cullr looks for `media-hoarder.db` in the usual install
