@@ -9,7 +9,9 @@ SQLite at some other file and open it read-write.
 Everything runs against temporary directories. Nothing touches a real library.
 """
 
+import gc
 import os
+import shutil
 import sqlite3
 import tempfile
 import unittest
@@ -146,6 +148,56 @@ class ReadOnlyConnectionTests(unittest.TestCase):
         self.assertEqual(_tree(self.tmp), before)
 
 
+def _live_connections_to(db):
+    """Open sqlite connections still pointing at `db`.
+
+    A closed connection raises ProgrammingError, so anything that answers
+    "pragma database_list" is still holding the file.
+    """
+    want = Path(db).resolve()
+    out = []
+    for obj in gc.get_objects():
+        if not isinstance(obj, sqlite3.Connection):
+            continue
+        try:
+            rows = obj.execute("pragma database_list").fetchall()
+        except sqlite3.Error:
+            continue
+        for row in rows:
+            if row[2] and Path(row[2]).resolve() == want:
+                out.append(obj)
+                break
+    return out
+
+
+class ConnectionLifetimeTests(unittest.TestCase):
+    """Readers must let go of the database when they are done with it.
+
+    The module opens Media-Hoarder's live database while Media-Hoarder may be
+    running, so a reader that returns while still holding the file is not a
+    tidy guest. Note there is no gc.collect() below on purpose: releasing a
+    handle only when the cyclic collector happens to run is the defect, not the
+    fix for it.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
+        self.db = self.tmp / "media-hoarder.db"
+        _make_db(self.db)
+
+    def test_explicit_close_releases_the_handle(self):
+        con = MediaHoarder(str(self.db))._connect()
+        con.close()
+        self.assertEqual(_live_connections_to(self.db), [])
+
+    def test_source_paths_releases_the_handle(self):
+        mh = MediaHoarder(str(self.db))
+        mh.source_paths()
+        self.assertEqual(_live_connections_to(self.db), [],
+                         "source_paths() returned while still holding the database")
+
+
 class DeletionContainmentTests(unittest.TestCase):
     """Deleting here unlinks a real file, so containment is the safety layer.
 
@@ -155,9 +207,10 @@ class DeletionContainmentTests(unittest.TestCase):
     """
 
     def setUp(self):
-        td = tempfile.TemporaryDirectory()
-        self.addCleanup(td.cleanup)
-        self.tmp = Path(td.name)
+        # Tolerant cleanup: the reader's lingering handle is ConnectionLifetime's
+        # subject, and it must not show up as noise on the containment results.
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
         self.root = self.tmp / "media"
         self.root.mkdir()
         self.inside = self.root / "ep.mkv"
