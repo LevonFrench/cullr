@@ -17,6 +17,7 @@ from pathlib import Path
 
 from cullr.mediahoarder import (
     MediaHoarder,
+    MHError,
     _drive_of,
     _first_segment,
     _join,
@@ -28,16 +29,19 @@ UNC_A = "\\\\hostA\\media"
 UNC_B = "\\\\hostB\\media"
 
 
-def _make_db(path):
+def _make_db(path, sources=None):
     """A minimal database with the two tables this module reads."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    if sources is None:
+        sources = [str(path.parent)]
     con = sqlite3.connect(str(path))
     try:
         con.execute("create table tbl_SourcePaths "
                     "(id_SourcePaths integer primary key, Path text)")
         con.execute("create table tbl_Movies (id_Movies integer primary key)")
-        con.execute("insert into tbl_SourcePaths (id_SourcePaths, Path) values (1, ?)",
-                    (str(path.parent),))
+        for i, src in enumerate(sources, start=1):
+            con.execute("insert into tbl_SourcePaths (id_SourcePaths, Path) "
+                        "values (?, ?)", (i, src))
         con.commit()
     finally:
         con.close()
@@ -140,6 +144,76 @@ class ReadOnlyConnectionTests(unittest.TestCase):
         con.close()
         # A truncated filename would have been created next to "bob#1".
         self.assertEqual(_tree(self.tmp), before)
+
+
+class DeletionContainmentTests(unittest.TestCase):
+    """Deleting here unlinks a real file, so containment is the safety layer.
+
+    Every path below lives under a temporary directory. The guard resolves
+    before comparing, which is what stops a "..' segment or a symlinked season
+    directory from matching a source path and then unlinking something else.
+    """
+
+    def setUp(self):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        self.tmp = Path(td.name)
+        self.root = self.tmp / "media"
+        self.root.mkdir()
+        self.inside = self.root / "ep.mkv"
+        self.inside.write_bytes(b"inside")
+
+        self.outside = self.tmp / "outside"
+        self.outside.mkdir()
+        self.stranger = self.outside / "ep.mkv"
+        self.stranger.write_bytes(b"do not touch")
+
+        self.db = self.tmp / "data" / "media-hoarder.db"
+        _make_db(self.db, sources=[str(self.root)])
+        self.mh = MediaHoarder(str(self.db), allow_delete=True)
+
+    def test_a_file_inside_a_source_path_is_allowed(self):
+        self.assertEqual(self.mh._guard(str(self.inside), [str(self.root)]),
+                         self.inside.resolve())
+
+    def test_deletion_is_refused_until_it_is_turned_on(self):
+        off = MediaHoarder(str(self.db))
+        with self.assertRaisesRegex(MHError, "disabled"):
+            off._guard(str(self.inside), [str(self.root)])
+        self.assertTrue(self.inside.is_file())
+
+    def test_a_sibling_that_merely_shares_a_prefix_is_refused(self):
+        sibling = self.tmp / "media-extra"
+        sibling.mkdir()
+        victim = sibling / "ep.mkv"
+        victim.write_bytes(b"do not touch")
+        with self.assertRaisesRegex(MHError, "outside a Media-Hoarder source path"):
+            self.mh._guard(str(victim), [str(self.root)])
+        self.assertTrue(victim.is_file())
+
+    def test_a_dotdot_segment_cannot_climb_out_of_the_source_path(self):
+        escape = str(self.root / ".." / "outside" / "ep.mkv")
+        with self.assertRaisesRegex(MHError, "outside a Media-Hoarder source path"):
+            self.mh._guard(escape, [str(self.root)])
+        self.assertTrue(self.stranger.is_file())
+
+    def test_a_symlinked_season_directory_cannot_lead_out(self):
+        link = self.root / "season"
+        try:
+            os.symlink(str(self.outside), str(link), target_is_directory=True)
+        except (OSError, NotImplementedError, AttributeError) as e:
+            self.skipTest("this platform will not create symlinks here: {0}".format(e))
+        with self.assertRaisesRegex(MHError, "outside a Media-Hoarder source path"):
+            self.mh._guard(str(link / "ep.mkv"), [str(self.root)])
+        self.assertTrue(self.stranger.is_file())
+
+    def test_delete_files_reclaims_inside_and_reports_outside(self):
+        freed, errors = self.mh.delete_files([str(self.inside), str(self.stranger)])
+        self.assertEqual(freed, len(b"inside"))
+        self.assertEqual(len(errors), 1)
+        self.assertIn("outside a Media-Hoarder source path", errors[0])
+        self.assertFalse(self.inside.exists())
+        self.assertTrue(self.stranger.is_file())
 
 
 if __name__ == "__main__":
