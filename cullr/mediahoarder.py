@@ -24,6 +24,7 @@ import os
 import platform
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -205,7 +206,7 @@ class MediaHoarder:
 
     def ping(self) -> dict:
         """Confirm the file is a Media-Hoarder database and report its size."""
-        with self._connect() as c:
+        with closing(self._connect()) as c:
             try:
                 movies = c.execute("select count(*) from tbl_Movies").fetchone()[0]
                 paths = c.execute("select count(*) from tbl_SourcePaths").fetchone()[0]
@@ -214,7 +215,7 @@ class MediaHoarder:
         return {"rows": movies, "sourcePaths": paths, "path": self.db_path}
 
     def source_paths(self) -> dict[int, str]:
-        with self._connect() as c:
+        with closing(self._connect()) as c:
             try:
                 return {r["id_SourcePaths"]: r["Path"]
                         for r in c.execute("select id_SourcePaths, Path from tbl_SourcePaths")}
@@ -272,7 +273,7 @@ class MediaHoarder:
         or damaged database must not escape as a raw sqlite3.Error, because that
         would take the whole library down with it, Radarr and Sonarr included.
         """
-        with self._connect() as c:
+        with closing(self._connect()) as c:
             try:
                 srcs = {r["id_SourcePaths"]: r["Path"] for r in
                         c.execute("select id_SourcePaths, Path from tbl_SourcePaths")}
@@ -380,7 +381,7 @@ class MediaHoarder:
 
     def poster(self, item_id: int) -> Optional[tuple[bytes, str]]:
         """Return (bytes, content-type) for a locally cached poster, or None."""
-        with self._connect() as c:
+        with closing(self._connect()) as c:
             try:
                 row = c.execute(
                     "select IMDB_posterSmall_URL p from tbl_Movies where id_Movies = ?",
